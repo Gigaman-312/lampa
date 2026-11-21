@@ -1,0 +1,43 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # каждый день в 03:17 UTC (06:17 МСК)
+  workflow_dispatch:        # ручной запуск из вкладки Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # SYNC_TOKEN (PAT с правами Contents + Workflows) нужен, только если
+          # в upstream появятся файлы в .github/workflows. Без него — GITHUB_TOKEN.
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Merge yumata/lampa into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/yumata/lampa.git
+          git fetch --no-tags upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Форк уже содержит все изменения upstream — синхронизация не нужна."
+            exit 0
+          fi
+
+          # Merge (не reset): собственные правки форка сохраняются.
+          # При конфликте шаг упадёт, и GitHub пришлёт уведомление.
+          git merge --no-edit upstream/main
+          git push origin HEAD:main
